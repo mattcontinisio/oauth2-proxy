@@ -217,6 +217,13 @@ func (p *GoogleProvider) EnrichSession(_ context.Context, s *sessions.SessionSta
 func (p *GoogleProvider) setGroupRestriction(opts options.GoogleOptions) {
 	adminService := getAdminService(opts)
 	p.groupValidator = func(s *sessions.SessionState) bool {
+		// If all groups are allowed, list all groups for user
+		if len(opts.Groups) == 0 {
+			s.Groups = listUserGroups(adminService, s.Email)
+			return true
+		}
+
+		// Otherwise, check user's membership in each group
 		// Reset our saved Groups in case membership changed
 		// This is used by `Authorize` on every request
 		s.Groups = make([]string, 0, len(opts.Groups))
@@ -331,6 +338,24 @@ func userInGroup(service *admin.Service, group string, email string) bool {
 		logger.Errorf("error checking group membership: %v", err)
 	}
 	return false
+}
+
+func listUserGroups(service *admin.Service, email string) []string {
+	var groups []string
+
+	// Use the Groups API to list all groups for the user
+	req := service.Groups.List().UserKey(email)
+	r, err := req.Do()
+	if err != nil {
+		logger.Errorf("error listing groups: %v", err)
+		return groups
+	}
+
+	for _, group := range r.Groups {
+		groups = append(groups, group.Name)
+	}
+
+	return groups
 }
 
 // RefreshSession uses the RefreshToken to fetch new Access and ID Tokens

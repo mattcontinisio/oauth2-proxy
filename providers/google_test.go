@@ -288,3 +288,28 @@ func TestGoogleProvider_userInGroup(t *testing.T) {
 	result = userInGroup(service, "group@example.com", "non-member-out-of-domain@otherexample.com")
 	assert.False(t, result)
 }
+
+func TestGoogleProvider_listUserGroups(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/admin/directory/v1/groups?userKey=member-in-domain@example.com" {
+			fmt.Fprintln(w, `{"groups": [{"name": "group@example.com"}]}`)
+		} else if r.URL.Path == "/admin/directory/v1/groups?userKey=non-member-in-domain@example.com" {
+			fmt.Fprintln(w, `{"groups": []}`)
+		}
+	}))
+	defer ts.Close()
+
+	client := ts.Client()
+	ctx := context.Background()
+
+	service, err := admin.NewService(ctx, option.WithHTTPClient(client))
+	assert.NoError(t, err)
+
+	service.BasePath = ts.URL
+
+	groups := listUserGroups(service, "member-in-domain@example.com")
+	assert.Equal(t, []string{"group@example.com"}, groups)
+
+	groups = listUserGroups(service, "non-member-in-domain@example.com")
+	assert.Equal(t, []string{}, groups)
+}
